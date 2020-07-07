@@ -1,0 +1,15 @@
+Package: dmf
+Title: Deviance Matrix Factorizations
+Version: 0.1
+Authors@R: 
+    person(given = "Luis",
+           family = "Carvalho",
+           role = c("aut", "cre"),
+           email = "lecarval@math.bu.edu",
+           comment = c(ORCID = "YOUR-ORCID-ID"))
+Description: What the package does (one paragraph).
+License: `use_mit_license()`
+Encoding: UTF-8
+LazyData: true
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.1.0
