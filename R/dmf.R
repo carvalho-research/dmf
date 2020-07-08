@@ -1,4 +1,4 @@
-# [ Deviance matrix factorization ]
+# [ Deviance Matrix Factorization ]
 
 # TODO:
 # `dmf(x ~ row(1) + column(1 + z), rank, offset, symmetric?, use_diagonal?)`
@@ -48,6 +48,13 @@ family_initialize <- function (x, weights, family = gaussian()) {
 }
 
 
+#' Center \code{dmf}.
+#'
+#' @param lv DMF structure to be centered.
+#' @param x0 Intercept column.
+#' @param reorder Reorder columns according to norm of Lambda?
+#' @return Centered DMF structure with \code{center} attribute.
+#' @export
 dmf_center <- function (lv, x0 = rep(1, nrow(lv$L)), reorder = TRUE) {
   q0 <- qr(x0)
   Lc <- qr.resid(q0, lv$L); Vc <- lv$V
@@ -62,7 +69,11 @@ dmf_center <- function (lv, x0 = rep(1, nrow(lv$L)), reorder = TRUE) {
        center = drop(tcrossprod(lv$V, qr.coef(q0, lv$L))))
 }
 
-# normalize sign
+#' Normalize sign of \code{dmf}: the first row of Lambda in \code{dmf} is non-negative.
+#'
+#' @param lv DMF structure to be sign-normalized.
+#' @return Sign-normalized DMF structure.
+#' @export
 dmf_sign <- function (lv) {
   s <- sign(lv$L[1, ])
   lv$L <- sweep(lv$L, 2, s, `*`)
@@ -71,9 +82,19 @@ dmf_sign <- function (lv) {
 }
 
 # NOTE: weight[i, j] == 0 means "don't use (i,j)"; is.na(x[i, j]) means "missing, estimate it"
+#' Perform deviance matrix factorization.
+#'
+#' @param x Input matrix to be factorized.
+#' @param family Family object to specify deviance loss.
+#' @param rank Decomposition rank.
+#' @param weights Entrywise weight.
+#' @param offset Entrywise offset.
+#' @param control Algorithm control parameters (see \code{glm.control}).
+#' @return DMF structure.
+#' @export
 dmf <- function (x, family = gaussian(),
                  rank = ncol(x), weights = 1, offset = zeros(x),
-                 maxit = 100, epsilon = 1e-6, trace = TRUE) {
+                 control = glm.control(epsilon = 1e-6, maxit = 100)) {
   n <- nrow(x); p <- ncol(x)
   rank <- as.integer(rank)
   if (n < p) stop("fewer observations than predictors")
@@ -102,7 +123,7 @@ dmf <- function (x, family = gaussian(),
   eta[!valid] <- mu[!valid] <- 0
   L <- (eta - offset)[, 1:rank, drop = FALSE] # V = I_p
   V <- matrix(nrow = p, ncol = rank)
-  for (it in 1:maxit) {
+  for (it in 1:control$maxit) {
     mu_eta <- matrix(family$mu.eta(eta), nrow = n, ncol = p)
     var <- matrix(family$variance(mu), nrow = n, ncol = p)
     # W = mu_eta / var * (x - mu) * weights
@@ -127,8 +148,8 @@ dmf <- function (x, family = gaussian(),
     eta <- tcrossprod(L, V) + offset
     mu <- family$linkinv(eta)
     dev_new <- sum(family$dev.resids(x[valid], mu[valid], weights[valid]))
-    if (it > 1 && (dev - dev_new) / (dev + .1) < epsilon) break
-    if (trace) message("[", it, "] dev = ", dev_new)
+    if (it > 1 && (dev - dev_new) / (dev + .1) < control$epsilon) break
+    if (control$trace) message("[", it, "] dev = ", dev_new)
     dev <- dev_new
     L_old <- L; V_old <- V
   }
