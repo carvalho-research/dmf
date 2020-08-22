@@ -3,3 +3,4 @@
 export(dmf)
 export(dmf_center)
 export(dmf_sign)
+export(dmf_symm)

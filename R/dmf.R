@@ -163,6 +163,16 @@ dmf <- function (x, family = gaussian(),
 
 
 # NOTE: factorization here is .5 * (L * V' + V * L')
+#' Perform a symmetric deviance matrix factorization, (L * V' + V * L') / 2.
+#'
+#' @param x Input matrix to be factorized.
+#' @param family Family object to specify deviance loss.
+#' @param rank Decomposition rank.
+#' @param weights Entrywise weight.
+#' @param offset Entrywise offset.
+#' @param control Algorithm control parameters (see \code{glm.control}).
+#' @return DMF structure.
+#' @export
 dmf_symm <- function (x, family = gaussian(),
                       rank = ncol(x), weights = 1, offset = zeros(x),
                       maxit = 100, epsilon = 1e-6, trace = TRUE) {
