@@ -127,8 +127,11 @@ dmf <- function (x, family = gaussian(),
     mu_eta <- matrix(family$mu.eta(eta), nrow = n, ncol = p)
     var <- matrix(family$variance(mu), nrow = n, ncol = p)
     # W = mu_eta / var * (x - mu) * weights
-    S <- mu_eta ^ 2 / var * weights
+    is_inf_mu <- is.infinite(mu)
+    S <- mu_eta / var * mu_eta * weights
+    S[is_inf_mu] <- 0
     Z <- eta - offset + (x - mu) / mu_eta # working residuals
+    Z[is_inf_mu] <- eta[is_inf_mu] - offset[is_inf_mu]
     Z[!valid] <- 0
 
     L <- normalize(L)
@@ -147,7 +150,9 @@ dmf <- function (x, family = gaussian(),
 
     eta <- tcrossprod(L, V) + offset
     mu <- family$linkinv(eta)
-    dev_new <- sum(family$dev.resids(x[valid], mu[valid], weights[valid]))
+    dr <- family$dev.resids(x[valid], mu[valid], weights[valid])
+    dr[is.na(dr) | is.nan(dr)] <- 0
+    dev_new <- sum(dr)
     if (it > 1 && (dev - dev_new) / (dev + .1) < control$epsilon) break
     if (control$trace) message("[", it, "] dev = ", dev_new)
     dev <- dev_new
