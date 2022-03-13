@@ -123,6 +123,8 @@ dmf <- function (x, family = gaussian(),
   eta[!valid] <- mu[!valid] <- 0
   L <- (eta - offset)[, 1:rank, drop = FALSE] # V = I_p
   V <- matrix(nrow = p, ncol = rank)
+
+  # [ iterate ]
   for (it in 1:control$maxit) {
     mu_eta <- matrix(family$mu.eta(eta), nrow = n, ncol = p)
     var <- matrix(family$variance(mu), nrow = n, ncol = p)
@@ -246,6 +248,109 @@ dmf_symm <- function (x, family = gaussian(),
 
   list(L = L, V = V, deviance = dev, family = family)
 }
+
+
+# assume `y` and `mu` are n x k x p, `wt` is n x p
+y_log_y <- function (y, mu) ifelse(y != 0., y * log(y / mu), 0.)
+mn_deviance <- function (y, mu, wt) {
+  n <- dim(y)[1]; k <- dim(y)[2]; p <- dim(y)[3]
+  dr <- 0.
+  for (i in seq_len(n)) {
+    for (j in seq_len(p)) {
+      yij <- y[i, , j]; muij <- mu[i, , j]
+      dr <- dr + 2 * wt[i, j] * (sum(y_log_y(yij, muij)) +
+                                 y_log_y(1 - sum(yij), 1 - sum(muij)))
+    }
+  }
+  dr
+}
+
+
+# X_[i, ., j] ~ind MN(w_ij, pi_ij)
+# log(pi_ijl / pi_ijk) = (L_l)_i' * V_j
+# where each L_l is n x q and V is p x q
+# For identifiability, L~ = vec_k(L) is nk x q and has orthogonal columns and
+# V in Stiefel(p, q), that is, L~ has the (incomplete) generalized left vectors
+# up to scale, L~ * V' = U * D * V~' is a SVD.
+
+#' Perform a deviance matrix factorization, for a multinomial tensor.
+#'
+#' @param x Input tensor to be factorized, of dimensions (n x k) x p.
+#' @param rank Decomposition rank.
+#' @param control Algorithm control parameters (see \code{glm.control}).
+#' @return DMF structure, where L is (n x k) x rank and V is p x rank.
+#' @export
+dmf_multinom <- function (x, rank = dim(x)[3],
+                          control = glm.control(epsilon = 1e-6, maxit = 100)) {
+  n <- dim(x)[1]; k <- dim(x)[2] - 1; p <- dim(x)[3]
+  rank <- as.integer(rank)
+
+  # [ initialize ]
+  eta <- array(dim = c(n, k, p))
+  mu <- array(dim = c(n, k, p))
+  wt <- apply(x, c(1, 3), sum) # counts
+  x <- x[, -(k + 1), , drop = FALSE] # remove last level as reference
+  for (i in seq_len(n)) {
+    for (j in seq_len(p)) {
+      mu[i, , j] <- (x[i, , j] + .5) / (1 + wt[i, j] + .5 * k)
+      x[i, , j] <- x[i, , j] / wt[i, j]
+      eta[i, , j] <- log(mu[i, , j]) - log(1 - sum(mu[i, , j]))
+    }
+  }
+  L <- eta[, , 1:rank, drop = FALSE] # V = I_p
+  V <- matrix(nrow = p, ncol = rank)
+  dev <- mn_deviance(x, mu, wt)
+
+  # [ iterate ]
+  for (it in 1:control$maxit) {
+    L <- array(normalize(matrix(L, n * k, rank)), dim = dim(L))
+    for (j in seq_len(p)) {
+      z <- numeric(rank); H <- matrix(0., rank, rank)
+      for (i in seq_len(n)) {
+        xij <- matrix(L[i, ,], nrow = k, ncol = rank); yij <- x[i, , j]
+        etaij <- eta[i, , j]; muij <- mu[i, , j]
+        W <- diag(muij, nrow = k, ncol = k) - tcrossprod(muij)
+        z <- z + wt[i, j] * crossprod(xij, yij - muij + drop(W %*% etaij))
+        H <- H + wt[i, j] * crossprod(xij, W %*% xij)
+      }
+      V[j, ] <- gsym_solve(H, z)
+    }
+
+    V <- normalize(V)
+    for (i in seq_len(n)) {
+      z <- numeric(k * rank); H <- matrix(0., k * rank, k * rank)
+      for (j in seq_len(p)) {
+        xij <- kronecker(diag(k), V[j, , drop = FALSE]); yij <- x[i, , j]
+        etaij <- eta[i, , j]; muij <- mu[i, , j]
+        W <- diag(muij, nrow = k, ncol = k) - tcrossprod(muij)
+        z <- z + wt[i, j] * crossprod(xij, yij - muij + drop(W %*% etaij))
+        H <- H + wt[i, j] * crossprod(xij, W %*% xij)
+      }
+      L[i, ,] <- matrix(gsym_solve(H, z), nrow = k, byrow = TRUE)
+    }
+
+    for (i in seq_len(n)) {
+      etai <- tcrossprod(L[i, ,], V)
+      for (j in seq_len(p)) {
+        muj <- exp(c(etai[, j], 0))
+        mu[i, , j] <- muj[-(k + 1)] / sum(muj)
+      }
+      eta[i, , ] <- etai
+    }
+    dev_new <- mn_deviance(x, mu, wt)
+    if (it > 1 && (dev - dev_new) / (dev + .1) < control$epsilon) break
+    if (control$trace) message("[", it, "] dev = ", dev_new)
+    dev <- dev_new
+    L_old <- L; V_old <- V
+  }
+  # [ orthogonalize ]
+  slv <- svd(tcrossprod(matrix(L_old, n * k, rank), V_old)) # generalized svd
+  L <- array(sweep(slv$u[, 1:rank, drop = FALSE], 2, slv$d[1:rank], `*`), dim = dim(L))
+  V <- slv$v[, 1:rank, drop = FALSE]
+
+  list(L = L, V = V, deviance = dev)
+}
+
 
 
 # [ facilities ]
