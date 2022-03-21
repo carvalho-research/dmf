@@ -495,7 +495,7 @@ family_test <- function(x, lv, G, weights =1, offset = zeros(x), chisq_stat =FAL
 }
 
 
-#' Conduct factorization rank selection basedupon ACT
+#' Conduct factorization rank selection based upon ACT
 #'
 #' @param x Input matrix to be factorized.
 #' @param family Family object to specify deviance loss.
@@ -503,7 +503,7 @@ family_test <- function(x, lv, G, weights =1, offset = zeros(x), chisq_stat =FAL
 #' @param offset Entrywise offset.
 #' @export
 act_rank <- function(x, family = gaussian(), weights =1, offset= zeros(x)){
-  n <- nrow(x); p <- ncol(x)
+  n <- nrow(x); p <- ncol(x); d = ncol(x)
   if (n < p) stop("fewer observations than predictors")
   if (length(weights) == 1)
     weights <- rep(weights, n * p)
@@ -555,38 +555,32 @@ act_rank <- function(x, family = gaussian(), weights =1, offset= zeros(x)){
 #' @param offset Entrywise offset.
 #' @param max_iter Maximum iteration.
 #' @param fit_full Fit eta with full rank matrix? Always recommended if computation speed is permitted
-#' @param parallel Fit after parallelization?
 #' @export
-onatski_rank = function(x, family, q_max, weights = 1, offset = zeros(x), max_iter =10, fit_full =FALSE, parallel =FALSE){
+onatski_improved = function(x, family, q_max, weights = 1, offset = zeros(x), 
+                            max_iter =10, fit_full =FALSE){
   n <- nrow(x); p <- ncol(x)
-  if (p< q_max+5 ) stop('decrease rmax')
-  #if (det(cov_matrix) <= 1e-8) stop("Not a positive definite matrix")
+  if (p < q_max + 5 ) stop('decrease rmax')
   
-  if(fit_full){
-    fit_result = dmf(x, family, rank= p, weights, offset)  
-  }else{
-    fit_result = dmf(x, family, rank= q_max, weights, offset)  
-  }
+  if(fit_full){fit_result = dmf(x, family, rank= p, weights, offset)
+  }else{fit_result = dmf(x, family, rank= q_max, weights, offset)  }
   
   eta = tcrossprod(fit_result$L, fit_result$V)
   cov_matrix = cov(eta)
-  
-  j = q_max + 1
-  lambda_hats = eigen(cov_matrix)$value
-  y_temp = lambda_hats[j:(j+4)]
-  x_temp = (j + seq(-1, 3,1))^(2/3)
-  delta_temp = 2* abs(coef(lm(y_temp~x_temp))[2])
-  flag = which((-diff(lambda_hats)>= delta_temp))
-  if(length(flag) == 0){q_hat = 0}else{q_hat = tail(flag[flag<=q_max],1)}
-  j = q_hat +1
-  for(i in 1:max_iter){
-    y_temp = lambda_hats[j:(j+4)]
-    x_temp = (j + seq(-1, 3,1))^(2/3)
-    delta_temp = 2* abs(coef(lm(y_temp~x_temp))[2])
+  tol = 1e3
+  j_update = q_max + 1
+  while (tol>=1){
+    j = j_update
+    lambda_hats = eigen(cov_matrix)$value
+    y_reg = lambda_hats[j:(j+4)]
+    x_reg = (j + seq(-1, 3, 1))^(2/3)
+    delta_temp = as.numeric(2* abs(coef(lm(y_reg ~ x_reg))))[2]
     flag = which((-diff(lambda_hats)>= delta_temp))
     if(length(flag) == 0){q_hat = 0}else{q_hat = tail(flag[flag<=q_max],1)}
-    j = q_hat +1
+    j_update = q_hat + 1
+    tol = abs(j_update -j)
   }
   
-  return (list(q_hat = q_hat, delta = delta_temp, L =fit_result$L ,V = fit_result$V, deviance = fit_result$deviance, family = fit_result$family))
+  return (list(q_hat = q_hat, delta = delta_temp, L =fit_result$L,
+               V = fit_result$V, deviance = fit_result$deviance, family = fit_result$family))
+  
 }
