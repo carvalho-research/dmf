@@ -354,6 +354,40 @@ dmf_multinom <- function (x, rank = dim(x)[3],
 
 
 # [ facilities ]
+svd_rank1update <- function (sx, l, v) {
+  nl <- norm(matrix(l, ncol = 1), "F")
+  nv <- norm(matrix(v, ncol = 1), "F")
+  delta <- nl * nv; l <- l / nl; v <- v / nv
+  ul <- l - sx$u %*% crossprod(sx$u, l); nl <- norm(ul, "F")
+  uv <- v - sx$v %*% crossprod(sx$v, v); nv <- norm(uv, "F")
+
+  B <- delta * tcrossprod(c(crossprod(sx$u, l), nl),
+                          c(crossprod(sx$v, v), nv))
+  diag(B)[1:q] <- diag(B)[1:q] + sx$d[1:q]
+  sb <- svd(B)
+  list(d = sb$d,
+       u = cbind(sx$u, ul / nl) %*% sb$u,
+       v = cbind(sx$v, uv / nv) %*% sb$v)
+}
+
+#' Increases the rank of a DMF.
+#'
+#' @param dx DMF structure for x of rank q.
+#' @param x The matrix that was partially decomposed.
+#' @return DMF structure for x of rank q + 1.
+#' @export
+dmf_rank1update <- function (dx, x) {
+  dx1 <- dmf(x, rank = 1, offset = tcrossprod(dx$L, dx$V), family = dx$family)
+  D <- apply(dx$L, 2, function (li) norm(li, "F"))
+  ds <- list(d = D, u = sweep(dx$L, 2, D, `/`), v = dx$V) |>
+    svd_rank1update(dx1$L, dx1$V) # adjust
+  dx1$L <- sweep(ds$u, 2, ds$d, `*`)
+  dx1$V <- ds$v
+  dx1
+}
+
+
+
 dmf_fitted <- function (lv, r = ncol(lv$L), subset = seq_len(nrow(lv$L)),
                         linear = FALSE) {
   eta <- tcrossprod(lv$L[subset, 1:r, drop = FALSE],
@@ -387,38 +421,20 @@ dmf_aic <- function (lv, scale = 2) {
 
 
 
-generate_Y <- function(glm_family, eta_star, phi = 1, glm_weights =0){
-  
-  n <- dim(eta_star)[1] 
-  d <- dim(eta_star)[2]
-  if (glm_family$family =="gaussian"){
-    
-    y = rnorm(n*d, glm_family$linkinv(eta_star), phi)
-    dim(y) = dim(eta_star)
-    return (y)
-  }
-  else if(glm_family$family =='poisson'){
-    
-    y = rpois(n*d, glm_family$linkinv(eta_star))
-    dim(y) = dim(eta_star)
-    return (y)
-  }
-  else if (glm_family$family =='binomial'){
-    
-    y = rbinom(n*d, glm_weights, glm_family$linkinv(eta_star))
-    dim(y) = dim(eta_star)
-    return (y)
-  }
-  else if(grepl('^Negative Binomial', glm_family$family)){
-    y = rnegbin(n*d, mu = glm_family$linkinv(eta_star), theta = phi)
-    dim(y) = dim(eta_star)
-    return (y) 
-  }
-  else if(glm_family$family == 'Gamma'){
-    y = rgamma(n*d ,shape = phi , scale = glm_family$linkinv(eta_star)/phi)
-    dim(y) = dim(eta_star)
-    return (y) 
-  }
+generate_Y <- function (glm_family, eta_star, phi = 1, glm_weights = 1) {
+  y_len <- prod(dim(eta_star))
+  mu <- glm_family$linkinv(eta_star)
+  family <- glm_family$family
+  if (grepl("Negative Binomial", family)) family <- "negative.binomial"
+  y <- switch(family,
+              gaussian = rnorm(y_len, mu, sqrt(phi)),
+              poisson = rpois(y_len, mu),
+              binomial = rbinom(y_len, glm_weights, mu),
+              Gamma = rgamma(y_len ,shape = phi, scale = mu / phi),
+              negative.binomial = rnegbin(y_len, mu = mu, theta = phi),
+              stop("family `", glm_family$family, "` not recognized"))
+  dim(y) <- dim(eta_star)
+  y
 }
 
 #' Perform a generalized Hosmer–Lemeshow test , (L * V' + V * L') / 2.
@@ -430,7 +446,7 @@ generate_Y <- function(glm_family, eta_star, phi = 1, glm_weights =0){
 #' @param offset Entrywise offset.
 #' @param chisq_stat return normalized vector or the P value of chi_square statistics?
 #' @export
-family_test <- function(x, lv, G, weights =1, offset = zeros(x), chisq_stat =FALSE){
+family_test <- function (x, lv, G, weights = 1, offset = zeros(x), chisq_stat = FALSE) {
   n <- nrow(x); p <- ncol(x)
   if (n < p) stop("fewer observations than predictors")
   if (length(weights) == 1)
@@ -449,49 +465,42 @@ family_test <- function(x, lv, G, weights =1, offset = zeros(x), chisq_stat =FAL
   valid <- (weights > 0) & (!is.na(x))
   if (any(apply(!valid, 1, all)) || any(apply(!valid, 2, all)))
     stop("full row or column with zero weights or missing values")
-  
+
   G <- as.integer(G)
   if (G > n*p) stop('fewer observations than groups of partition')
-  
+
   mu_hat = dmf_fitted(lv)
-  #if (lv$family$family =='binomial'){
-  if (endsWith(lv$family$family,'binomial')){
-    x = x / weights
+  if (endsWith(lv$family$family,'binomial')) x <- x / weights
+
+  if (lv$family$family == "Gamma") {
+    phi_hat <- 1 / mean((x - mu_hat) ^ 2)
+  } else if (lv$family$family == "gaussian") {
+    phi_hat <- mean((x - mu_hat) ^ 2)
+  } else if (startsWith(lv$family$family, "quasi")) {
+    phi_hat <- mean((x - mu_hat) ^ 2)
+  } else {
+    phi_hat <- 1
   }
-  
-  if (lv$family$family== "Gamma"){
-    phi_hat = 1/mean((x - mu_hat)^2)
-  }else if(lv$family$family == 'Gaussian'){
-    phi_hat = mean((x - mu_hat)^2)
-  }else if(startsWith(lv$family$family, 'quasi')){
-    phi_hat = mean((x - mu_hat)^2)
-  }else{
-    phi_hat = 1
-  }
-  eta_hat = data.frame(eta = c(lv$family$linkfun(mu_hat)))
-  cut_quantle = seq(0, 1, 1/G)
-  eta_g = eta_hat %>% group_by() %>% mutate(G = cut(eta, quantile(eta, cut_quantle), 
-                                                    labels = 1:G, 
+  eta_hat <- data.frame(eta = c(lv$family$linkfun(mu_hat)))
+  cut_quantle <- seq(0, 1, 1 / G)
+  # TODO: remove magrittr dependency
+  eta_g = eta_hat %>% group_by() %>% mutate(G = cut(eta, quantile(eta, cut_quantle),
+                                                    labels = 1:G,
                                                     include.lowest = TRUE))
-  
+
   # [ construct statistics ]
-  resids = matrix(x-mu_hat)/sqrt(n*p)
-  var = matrix( lv$family$variance(mu_hat) / weights)/ (n*p)
-  
-  s_vec = matrix(0, nrow = G)
-  d_diag = rep(0, G)
-  for (g in 1:G){
-    s_vec[g] = sum(resids[eta_g$G==g])
-    d_diag[g] = phi_hat * sum(var[eta_g$G==g])
+  resids <- matrix(x - mu_hat) / sqrt(n * p)
+  var <- matrix(lv$family$variance(mu_hat) / weights) / (n * p)
+
+  s_vec <- matrix(0, nrow = G)
+  d_diag <- rep(0, G)
+  for (g in 1:G) {
+    s_vec[g] <- sum(resids[eta_g$G == g])
+    d_diag[g] <- phi_hat * sum(var[eta_g$G == g])
   }
-  
-  if(chisq_stat == FALSE){
-    return(s_vec/sqrt(d_diag))
-  }
-  else{
-    chisq_stat = crossprod(t(crossprod(s_vec, solve(diag(d_diag)))), s_vec)[1]
-    return(chisq_stat)
-  }
+
+  if (chisq_stat == FALSE) s_vec / sqrt(d_diag) else
+    crossprod(t(crossprod(s_vec, solve(diag(d_diag)))), s_vec)[1] # FIXME
 }
 
 
@@ -502,7 +511,7 @@ family_test <- function(x, lv, G, weights =1, offset = zeros(x), chisq_stat =FAL
 #' @param weights Entrywise weight.
 #' @param offset Entrywise offset.
 #' @export
-act_rank <- function(x, family = gaussian(), weights =1, offset= zeros(x)){
+act_rank <- function(x, family = gaussian(), weights = 1, offset = zeros(x)) {
   n <- nrow(x); p <- ncol(x); d = ncol(x)
   if (n < p) stop("fewer observations than predictors")
   if (length(weights) == 1)
@@ -521,33 +530,33 @@ act_rank <- function(x, family = gaussian(), weights =1, offset= zeros(x)){
   valid <- (weights > 0) & (!is.na(x))
   if (any(apply(!valid, 1, all)) || any(apply(!valid, 2, all)))
     stop("full row or column with zero weights or missing values")
-  
-  
-  invlink_Y = family$linkfun(x/weights)
-  invlink_Y[invlink_Y == Inf] = max(invlink_Y[which(invlink_Y < Inf)])
-  invlink_Y[invlink_Y == -Inf] = min(invlink_Y[which(invlink_Y > -Inf)])
-  if (sum(is.na(invlink_Y))!=0) {
+
+  invlink_Y <- family$linkfun(x / weights)
+  inf_ily <- is.infinite(invlink_Y)
+  invlink_Y[inf_ily & (invlink_Y > 0)] <- max(invlink_Y[!inf_ily])
+  invlink_Y[inf_ily & (invlink_Y < 0)] <- min(invlink_Y[!inf_ily])
+  if (any(is.na(invlink_Y))) {
     warning("NA produced in g(Y) transformation, imputing with mean")
-    invlink_Y[is.na(invlink_Y)] = mean(invlink_Y, na.rm =TRUE)
+    invlink_Y[is.na(invlink_Y)] <- mean(invlink_Y, na.rm =TRUE)
   }
-  
-  lambdas = eigen(cor(invlink_Y))$value
-  m = rep(0, d-1)
-  for (j in 1:(d-1)){
-    m[j] = 1/(d-j) * (sum(1/(lambdas[(j+1):d] - lambdas[j])) +  1/((3*lambdas[j] + lambdas[j+1])/4 - lambdas[j]))
+
+  lambdas <- eigen(cor(invlink_Y))$value
+  m <- rep(0, d - 1)
+  for (j in 1:(d - 1)) {
+    m[j] <- 1 / (d - j) * (sum(1/(lambdas[(j + 1):d] - lambdas[j])) +
+                           1 / ((3 * lambdas[j] + lambdas[j + 1]) / 4 - lambdas[j]))
   }
-  
-  rho_j= (d-1:(d-1))/(n-1)
-  m_ = -(1-rho_j) * 1/lambdas[1:(d-1)] + rho_j*m
-  lambdas_adjust =-1/m_
-  
-  return (sum(lambdas_adjust> 1 + sqrt(d/n)))
+
+  rho_j <- (d - 1:(d - 1)) / (n - 1)
+  m1 = rho_j * m - (1 - rho_j) / lambdas[1:(d-1)]
+  lambdas_adjust <- -1 / m1
+  sum(lambdas_adjust > 1 + sqrt(d / n))
 }
 
 
-
-
-#' Conduct factorization rank selection based upon maximum eigenvalue gap Onatski(2010). Algorithm first fit dmf with rank = q_max then conduct eigen gap search on the covariance of fitted eta
+#' Conduct factorization rank selection based upon maximum eigenvalue gap
+#' Onatski(2010). Algorithm first fit dmf with rank = q_max then conduct eigen
+#' gap search on the covariance of fitted eta
 #' @param x Input matrix to be factorized.
 #' @param family Family object to specify deviance loss.
 #' @param q_max Maximum rank eta.
@@ -556,31 +565,28 @@ act_rank <- function(x, family = gaussian(), weights =1, offset= zeros(x)){
 #' @param max_iter Maximum iteration.
 #' @param fit_full Fit eta with full rank matrix? Always recommended if computation speed is permitted
 #' @export
-onatski_improved = function(x, family, q_max, weights = 1, offset = zeros(x), 
-                            max_iter =10, fit_full =FALSE){
+onatski_rank = function(x, family, q_max, weights = 1, offset = zeros(x),
+                            max_iter = 10, fit_full = FALSE) {
   n <- nrow(x); p <- ncol(x)
-  if (p < q_max + 5 ) stop('decrease rmax')
-  
-  if(fit_full){fit_result = dmf(x, family, rank= p, weights, offset)
-  }else{fit_result = dmf(x, family, rank= q_max, weights, offset)  }
-  
-  eta = tcrossprod(fit_result$L, fit_result$V)
-  cov_matrix = cov(eta)
-  tol = 1e3
-  j_update = q_max + 1
-  while (tol>=1){
-    j = j_update
-    lambda_hats = eigen(cov_matrix)$value
-    y_reg = lambda_hats[j:(j+4)]
-    x_reg = (j + seq(-1, 3, 1))^(2/3)
-    delta_temp = as.numeric(2* abs(coef(lm(y_reg ~ x_reg))))[2]
-    flag = which((-diff(lambda_hats)>= delta_temp))
-    if(length(flag) == 0){q_hat = 0}else{q_hat = tail(flag[flag<=q_max],1)}
-    j_update = q_hat + 1
-    tol = abs(j_update -j)
+  if (p < q_max + 5 ) stop("decrease rmax")
+
+  fit_result <- dmf(x, family, rank = ifelse(fit_full, p, q_max), weights, offset)
+  eta <- tcrossprod(fit_result$L, fit_result$V)
+  cov_matrix <- cov(eta)
+  tol <- 1
+  j_update <- q_max + 1
+  while (tol >= 1) {
+    j <- j_update
+    lambda_hats <- eigen(cov_matrix)$value
+    y_reg <- lambda_hats[j:(j + 4)]
+    x_reg <- (j + seq(-1, 3, 1)) ^ (2 / 3)
+    delta_temp <- as.numeric(2 * abs(coef(lm(y_reg ~ x_reg))))[2]
+    flag <- which((-diff(lambda_hats) >= delta_temp))
+    q_hat <- ifelse(length(flag) == 0, 0, tail(flag[flag <= q_max], 1))
+    j_update <- q_hat + 1
+    tol <- abs(j_update - j)
   }
-  
-  return (list(q_hat = q_hat, delta = delta_temp, L =fit_result$L,
-               V = fit_result$V, deviance = fit_result$deviance, family = fit_result$family))
-  
+  list(q_hat = q_hat, delta = delta_temp, L = fit_result$L, V = fit_result$V,
+       deviance = fit_result$deviance, family = fit_result$family)
 }
+

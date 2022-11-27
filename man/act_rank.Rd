@@ -2,7 +2,7 @@
 % Please edit documentation in R/dmf.R
 \name{act_rank}
 \alias{act_rank}
-\title{Conduct factorization rank selection basedupon ACT}
+\title{Conduct factorization rank selection based upon ACT}
 \usage{
 act_rank(x, family = gaussian(), weights = 1, offset = zeros(x))
 }
@@ -16,5 +16,5 @@ act_rank(x, family = gaussian(), weights = 1, offset = zeros(x))
 \item{offset}{Entrywise offset.}
 }
 \description{
-Conduct factorization rank selection basedupon ACT
+Conduct factorization rank selection based upon ACT
 }

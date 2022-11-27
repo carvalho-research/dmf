@@ -2,7 +2,9 @@
 % Please edit documentation in R/dmf.R
 \name{onatski_rank}
 \alias{onatski_rank}
-\title{Conduct factorization rank selection based upon maximum eigenvalue gap Onatski(2010). Algorithm first fit dmf with rank = q_max then conduct eigen gap search on the covariance of fitted eta}
+\title{Conduct factorization rank selection based upon maximum eigenvalue gap
+Onatski(2010). Algorithm first fit dmf with rank = q_max then conduct eigen
+gap search on the covariance of fitted eta}
 \usage{
 onatski_rank(
   x,
@@ -11,8 +13,7 @@ onatski_rank(
   weights = 1,
   offset = zeros(x),
   max_iter = 10,
-  fit_full = FALSE,
-  parallel = FALSE
+  fit_full = FALSE
 )
 }
 \arguments{
@@ -29,9 +30,9 @@ onatski_rank(
 \item{max_iter}{Maximum iteration.}
 
 \item{fit_full}{Fit eta with full rank matrix? Always recommended if computation speed is permitted}
-
-\item{parallel}{Fit after parallelization?}
 }
 \description{
-Conduct factorization rank selection based upon maximum eigenvalue gap Onatski(2010). Algorithm first fit dmf with rank = q_max then conduct eigen gap search on the covariance of fitted eta
+Conduct factorization rank selection based upon maximum eigenvalue gap
+Onatski(2010). Algorithm first fit dmf with rank = q_max then conduct eigen
+gap search on the covariance of fitted eta
 }
