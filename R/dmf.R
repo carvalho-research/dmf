@@ -121,8 +121,13 @@ dmf <- function (x, family = gaussian(),
   mu <- family_initialize(x, weights, family)
   eta <- family$linkfun(mu)
   eta[!valid] <- mu[!valid] <- 0
-  L <- (eta - offset)[, 1:rank, drop = FALSE] # V = I_p
-  V <- matrix(nrow = p, ncol = rank)
+  #se <- svd(eta - offset)
+  #L <- sweep(se$u[, 1:rank, drop = FALSE], 2, se$d[1:rank], `*`)
+  #V <- se$v[, 1:rank, drop = FALSE]
+  L <- (eta - offset)[, 1:rank, drop = FALSE]
+  V <- matrix(0, nrow = p, ncol = rank); diag(V) <- 1
+  eta <- tcrossprod(L, V) + offset
+  mu <- family$linkinv(eta)
 
   # [ iterate ]
   for (it in 1:control$maxit) {
@@ -355,11 +360,11 @@ dmf_multinom <- function (x, rank = dim(x)[3],
 
 # [ facilities ]
 svd_rank1update <- function (sx, l, v) {
-  nl <- norm(matrix(l, ncol = 1), "F")
-  nv <- norm(matrix(v, ncol = 1), "F")
+  q <- ncol(sx$u) # == ncol(sx$v)
+  nl <- norm2(l); nv <- norm2(v)
   delta <- nl * nv; l <- l / nl; v <- v / nv
-  ul <- l - sx$u %*% crossprod(sx$u, l); nl <- norm(ul, "F")
-  uv <- v - sx$v %*% crossprod(sx$v, v); nv <- norm(uv, "F")
+  ul <- l - sx$u %*% crossprod(sx$u, l); nl <- norm2(ul)
+  uv <- v - sx$v %*% crossprod(sx$v, v); nv <- norm2(uv)
 
   B <- delta * tcrossprod(c(crossprod(sx$u, l), nl),
                           c(crossprod(sx$v, v), nv))
@@ -378,7 +383,7 @@ svd_rank1update <- function (sx, l, v) {
 #' @export
 dmf_rank1update <- function (dx, x) {
   dx1 <- dmf(x, rank = 1, offset = tcrossprod(dx$L, dx$V), family = dx$family)
-  D <- apply(dx$L, 2, function (li) norm(li, "F"))
+  D <- apply(dx$L, 2, norm2)
   ds <- list(d = D, u = sweep(dx$L, 2, D, `/`), v = dx$V) |>
     svd_rank1update(dx1$L, dx1$V) # adjust
   dx1$L <- sweep(ds$u, 2, ds$d, `*`)
