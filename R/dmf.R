@@ -116,6 +116,7 @@ dmf <- function (x, family = gaussian(),
         stop("inconsistent number of weights")
     }
   }
+  dim(weights) <- dim(x)
   valid <- (weights > 0) & (!is.na(x))
   if (any(apply(!valid, 1, all)) || any(apply(!valid, 2, all)))
     stop("full row or column with zero weights or missing values")
@@ -179,11 +180,13 @@ dmf <- function (x, family = gaussian(),
     L_old <- L; V_old <- V
   }
   # [ orthogonalize ]
-  slv <- svd(tcrossprod(L_old, V_old))
-  L <- sweep(slv$u[, 1:rank, drop = FALSE], 2, slv$d[1:rank], `*`)
-  V <- slv$v[, 1:rank, drop = FALSE]
+  ql <- qr(L_old); qv <- qr(V_old)
+  sr <- svd(tcrossprod(qr.R(ql), qr.R(qv)))
+  L <- qr.Q(ql) %*% sweep(sr$u, 2, sr$d, `*`)
+  V <- qr.Q(qv) %*% sr$v
 
-  list(L = L, V = V, deviance = dev, family = family, iter = it)
+  list(L = L, V = V, deviance = dev, family = family,
+       prior.weights = weights, iter = it)
 }
 
 
@@ -392,16 +395,26 @@ svd_rank1update <- function (sx, l, v) {
 #'
 #' @param dx DMF structure for x of rank q.
 #' @param x The matrix that was partially decomposed.
+#' @param adjust_svd Should the DMF be orthogonalized after increasing rank?
+#' @param maxit Maximum number of iterations for rank-one offset DMF.
 #' @return DMF structure for x of rank q + 1.
 #' @export
-dmf_rank1update <- function (dx, x, ...) {
-  dx1 <- dmf(x, rank = 1, offset = tcrossprod(dx$L, dx$V), family = dx$family, ...)
-  D <- apply(dx$L, 2, norm2)
-  ds <- list(d = D, u = sweep(dx$L, 2, D, `/`), v = dx$V) |>
-    svd_rank1update(dx1$L, dx1$V) # adjust
-  dx1$L <- sweep(ds$u, 2, ds$d, `*`)
-  dx1$V <- ds$v
-  dx1
+dmf_rank1update <- function (dx, x, adjust_svd = FALSE, maxit = 1, ...) {
+  dx1 <- dmf(x, rank = 1, offset = tcrossprod(dx$L, dx$V), family = dx$family,
+             weights = dx$prior.weights,
+             control = glm.control(maxit = maxit), ...)
+  if (adjust_svd) {
+    D <- apply(dx$L, 2, norm2)
+    ds <- list(d = D, u = sweep(dx$L, 2, D, `/`), v = dx$V) |>
+      svd_rank1update(dx1$L, dx1$V) # adjust
+    dx1$L <- sweep(ds$u, 2, ds$d, `*`)
+    dx1$V <- ds$v
+  } else {
+    dx1$L <- cbind(dx$L, dx1$L)
+    dx1$V <- cbind(dx$V, dx1$V)
+  }
+  dmf(x, rank = ncol(dx1$L), family = dx$family,
+      weights = dx$prior.weights, start = dx1) # refine
 }
 
 
