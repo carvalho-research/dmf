@@ -10,6 +10,8 @@ dmf(
   rank = ncol(x),
   weights = 1,
   offset = zeros(x),
+  start = NULL,
+  init_svd = FALSE,
   control = glm.control(epsilon = 1e-06, maxit = 100)
 )
 }
@@ -23,6 +25,10 @@ dmf(
 \item{weights}{Entrywise weight.}
 
 \item{offset}{Entrywise offset.}
+
+\item{start}{List containing initial \code{L} and \code{V} matrices as named entries.}
+
+\item{init_svd}{Should the initial \code{L} and \code{V} be computed from a truncated SVD?}
 
 \item{control}{Algorithm control parameters (see \code{glm.control}).}
 }

@@ -4,7 +4,7 @@
 \alias{dmf_rank1update}
 \title{Increases the rank of a DMF.}
 \usage{
-dmf_rank1update(dx, x)
+dmf_rank1update(dx, x, ...)
 }
 \arguments{
 \item{dx}{DMF structure for x of rank q.}

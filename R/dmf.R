@@ -89,11 +89,14 @@ dmf_sign <- function (lv) {
 #' @param rank Decomposition rank.
 #' @param weights Entrywise weight.
 #' @param offset Entrywise offset.
+#' @param start List containing initial `L` and `V` matrices as named entries.
+#' @param init_svd Should the initial `L` and `V` be computed from a truncated SVD?
 #' @param control Algorithm control parameters (see \code{glm.control}).
 #' @return DMF structure.
 #' @export
 dmf <- function (x, family = gaussian(),
                  rank = ncol(x), weights = 1, offset = zeros(x),
+                 start = NULL, init_svd = FALSE,
                  control = glm.control(epsilon = 1e-6, maxit = 100)) {
   n <- nrow(x); p <- ncol(x)
   rank <- as.integer(rank)
@@ -121,11 +124,21 @@ dmf <- function (x, family = gaussian(),
   mu <- family_initialize(x, weights, family)
   eta <- family$linkfun(mu)
   eta[!valid] <- mu[!valid] <- 0
-  #se <- svd(eta - offset)
-  #L <- sweep(se$u[, 1:rank, drop = FALSE], 2, se$d[1:rank], `*`)
-  #V <- se$v[, 1:rank, drop = FALSE]
-  L <- (eta - offset)[, 1:rank, drop = FALSE]
-  V <- matrix(0, nrow = p, ncol = rank); diag(V) <- 1
+  if (is.null(start)) {
+    if (init_svd) {
+      se <- RSpectra::svds(eta - offset, rank)
+      L <- sweep(se$u, 2, se$d, `*`); V <- se$v
+    } else {
+      L <- (eta - offset)[, 1:rank, drop = FALSE]
+      V <- matrix(0, nrow = p, ncol = rank); diag(V) <- 1
+    }
+  } else {
+    L <- start$L; V <- start$V
+    if (nrow(L) != n || ncol(L) != rank)
+      stop("dimensions of L are inconsistent")
+    if (nrow(V) != p || ncol(V) != rank)
+      stop("dimensions of V are inconsistent")
+  }
   eta <- tcrossprod(L, V) + offset
   mu <- family$linkinv(eta)
 
@@ -170,7 +183,7 @@ dmf <- function (x, family = gaussian(),
   L <- sweep(slv$u[, 1:rank, drop = FALSE], 2, slv$d[1:rank], `*`)
   V <- slv$v[, 1:rank, drop = FALSE]
 
-  list(L = L, V = V, deviance = dev, family = family)
+  list(L = L, V = V, deviance = dev, family = family, iter = it)
 }
 
 
@@ -381,8 +394,8 @@ svd_rank1update <- function (sx, l, v) {
 #' @param x The matrix that was partially decomposed.
 #' @return DMF structure for x of rank q + 1.
 #' @export
-dmf_rank1update <- function (dx, x) {
-  dx1 <- dmf(x, rank = 1, offset = tcrossprod(dx$L, dx$V), family = dx$family)
+dmf_rank1update <- function (dx, x, ...) {
+  dx1 <- dmf(x, rank = 1, offset = tcrossprod(dx$L, dx$V), family = dx$family, ...)
   D <- apply(dx$L, 2, norm2)
   ds <- list(d = D, u = sweep(dx$L, 2, D, `/`), v = dx$V) |>
     svd_rank1update(dx1$L, dx1$V) # adjust
