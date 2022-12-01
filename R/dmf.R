@@ -104,8 +104,7 @@ dmf <- function (x, family = gaussian(),
   if (rank <= 0) stop("invalid non-positive rank")
   if (rank > p) stop("rank is larger than number of predictors")
   if (length(weights) == 1)
-    weights <- rep(weights, n * p)
-  else {
+    weights <- rep(weights, n * p)else {
     if (is.vector(weights)) {
       if (length(weights) != n)
         stop("inconsistent number of weights")
@@ -129,9 +128,12 @@ dmf <- function (x, family = gaussian(),
     if (init_svd) {
       se <- RSpectra::svds(eta - offset, rank)
       L <- sweep(se$u, 2, se$d, `*`); V <- se$v
+      eta <- tcrossprod(L, V) + offset
+      mu <- family$linkinv(eta)
     } else {
       L <- (eta - offset)[, 1:rank, drop = FALSE]
-      V <- matrix(0, nrow = p, ncol = rank); diag(V) <- 1
+      # V <- matrix(0, nrow = p, ncol = rank); diag(V) <- 1
+      V <- matrix(nrow = p, ncol = rank)
     }
   } else {
     L <- start$L; V <- start$V
@@ -139,9 +141,12 @@ dmf <- function (x, family = gaussian(),
       stop("dimensions of L are inconsistent")
     if (nrow(V) != p || ncol(V) != rank)
       stop("dimensions of V are inconsistent")
+    eta <- tcrossprod(L, V) + offset
+    mu <- family$linkinv(eta)
   }
-  eta <- tcrossprod(L, V) + offset
-  mu <- family$linkinv(eta)
+  # [initialize without prior knowledge failed]
+  # eta <- tcrossprod(L, V) + offset
+  # mu <- family$linkinv(eta)
 
   # [ iterate ]
   for (it in 1:control$maxit) {
@@ -399,10 +404,16 @@ svd_rank1update <- function (sx, l, v) {
 #' @param maxit Maximum number of iterations for rank-one offset DMF.
 #' @return DMF structure for x of rank q + 1.
 #' @export
-dmf_rank1update <- function (dx, x, adjust_svd = FALSE, maxit = 1, ...) {
+dmf_rank1update <- function (dx, x, adjust_svd = FALSE, maxit = 100, refine = TRUE, ...) {
   dx1 <- dmf(x, rank = 1, offset = tcrossprod(dx$L, dx$V), family = dx$family,
              weights = dx$prior.weights,
              control = glm.control(maxit = maxit), ...)
+  # [changed to vecorized operation for rank 1 extension]
+  # dx1 <- dmf_extend(x, dx$family,
+  #                   origin_rank = ncol(dx$L), 
+  #                   extend_rank = ncol(dx$L) + 1, offset = tcrossprod(dx$L, dx$V), 
+  #                   weights = dx$prior.weights, control = glm.control(maxit = maxit))
+  
   if (adjust_svd) {
     D <- apply(dx$L, 2, norm2)
     ds <- list(d = D, u = sweep(dx$L, 2, D, `/`), v = dx$V) |>
@@ -413,8 +424,13 @@ dmf_rank1update <- function (dx, x, adjust_svd = FALSE, maxit = 1, ...) {
     dx1$L <- cbind(dx$L, dx1$L)
     dx1$V <- cbind(dx$V, dx1$V)
   }
-  dmf(x, rank = ncol(dx1$L), family = dx$family,
-      weights = dx$prior.weights, start = dx1) # refine
+  if(refine){
+    return(dmf(x, rank = ncol(dx1$L), family = dx$family,
+               weights = dx$prior.weights, start = dx1)) # refine
+  }else{
+    return(dx1)
+  }
+  
 }
 
 
@@ -656,90 +672,129 @@ dmf_identify = function(eta, q){
 #' @return Extended DMF structure.
 #' @export
 # x = X; family = glm_family; rank = 1; weights = glm_weights; offset = eta_q; control = glm.control(epsilon = 1e-6, maxit = 100)
-dmf_extend <- function (x, family, origin_rank, extend_rank = rank + 1, weights = 1, offset = zeros(x),
-                        control = glm.control(epsilon = 1e-6, maxit = 100)){
-  n <- nrow(x); p <- ncol(x)
-  rank = extend_rank -  origin_rank 
-  if (n < p) stop("fewer observations than predictors")
-  if (length(weights) == 1)
-    weights <- rep(weights, n * p)else {
-      if (is.vector(weights)) {
-        if (length(weights) != n)
-          stop("inconsistent number of weights")
-        else
-          weights <- rep(weights, p)
-      } else {
-        if (nrow(weights) != n && ncol(weights) != p)
-          stop("inconsistent number of weights")
-      }
-    }
+dmf_rank1update <- function (dx, x, adjust_svd = FALSE, maxit = 100, refine = TRUE, ...) {
+  
+  # [can changed to vectorized operation for rank 1 extension]
+  dx1 <- dmf(x, rank = 1, offset = tcrossprod(dx$L, dx$V), family = dx$family,
+             weights = dx$prior.weights,
+             control = glm.control(maxit = maxit), ...)
+  
+  if (adjust_svd) {
+    D <- apply(dx$L, 2, norm2)
+    ds <- list(d = D, u = sweep(dx$L, 2, D, `/`), v = dx$V) |>
+      svd_rank1update(dx1$L, dx1$V) # adjust
+    dx1$L <- sweep(ds$u, 2, ds$d, `*`)
+    dx1$V <- ds$v
+  } else {
+    dx1$L <- cbind(dx$L, dx1$L)
+    dx1$V <- cbind(dx$V, dx1$V)
+  }
+  if(refine){
+    return(dmf(x, rank = ncol(dx1$L), family = dx$family,
+               weights = dx$prior.weights, start = dx1)) # refine
+  }else{
+    return(dx1)
+  }
+  
+}
+
+dmf_extend <- function (x, dx, extend_rank = rank + 1, adjust_svd = FALSE,
+                        refine = FALSE, control = glm.control(epsilon = 1e-6, maxit = 100)
+                        ){
+  
+  # [ some definition inherited from offset dx fit]
+  n <- nrow(x); p <- ncol(x); origin_rank  = ncol(dx$L); 
+  family = dx$family; weights = dx$prior.weights
+  offset = tcrossprod(dx$L, dx$V)
+  rank = extend_rank -origin_rank 
+  
+  # [ no need for checking since everything is inherited from dx]
   valid <- (weights > 0) & (!is.na(x))
-  if (any(apply(!valid, 1, all)) || any(apply(!valid, 2, all)))
-    stop("full row or column with zero weights or missing values")
   
   # [ initialize ]
   mu <- family_initialize(x, weights, family)
   eta <- family$linkfun(mu)
-  
   eta[!valid] <- mu[!valid] <- 0
   L <- (eta - offset)[, 1:rank, drop = FALSE] # V = I_p
   V <- matrix(nrow = p, ncol = rank)
   
   # [ iterate ]
   for (it in 1:control$maxit) {
-    mu_eta <- matrix(family$mu.eta(eta), nrow = n, ncol = p)
-    var <- matrix(family$variance(mu), nrow = n, ncol = p)
-    # W = mu_eta / var * (x - mu) * weights
-    is_inf_mu <- is.infinite(mu)
-    S <- mu_eta / var * mu_eta * weights
-    S[is_inf_mu] <- 0
-    Z <- eta - offset + (x - mu) / mu_eta # working residuals
-    Z[is_inf_mu] <- eta[is_inf_mu] - offset[is_inf_mu]
-    Z[!valid] <- 0
-    
-    if (rank ==1){
-      left = colSums(sweep(sqrt(S), 1, L, "*")^2)
-      right = colSums(sweep(S * Z, 1, L, "*"))
-      V = right/left
-      left = rowSums(sweep(sqrt(S), 2, V, "*")^2)
-      right = rowSums(sweep(S * Z, 2, V, "*"))
-      L = right/left  
-    }else{
-      L <- normalize(L)
-      for (j in 1:p) {
-        aj <- valid[, j]
-        sj <- sqrt(S[, j]); Lj <- sweep(L, 1, sj, `*`)[aj, , drop = FALSE]
-        V[j, ] <- gsym_solve(crossprod(Lj), crossprod(Lj, (Z[, j] * sj)[aj]))
-      }
-      V <- normalize(V)
-      for (i in 1:n) {
-        ai <- valid[i, ]
-        si <- sqrt(S[i, ]); Vi <- sweep(V, 1, si, `*`)[ai, , drop = FALSE]
-        L[i, ] <- gsym_solve(crossprod(Vi), crossprod(Vi, (Z[i, ] * si)[ai]))
-      }
+      mu_eta <- matrix(family$mu.eta(eta), nrow = n, ncol = p)
+      var <- matrix(family$variance(mu), nrow = n, ncol = p)
+      # W = mu_eta / var * (x - mu) * weights
+      is_inf_mu <- is.infinite(mu)
+      S <- mu_eta / var * mu_eta * weights
+      S[is_inf_mu] <- 0
+      Z <- eta - offset + (x - mu) / mu_eta # working residuals
+      Z[is_inf_mu] <- eta[is_inf_mu] - offset[is_inf_mu]
+      Z[!valid] <- 0
       
-    }
-    
-    eta <- tcrossprod(L, V) + offset
-    mu <- family$linkinv(eta)
-    dr <- family$dev.resids(x[valid], mu[valid], weights[valid])
-    dr[is.na(dr) | is.nan(dr)] <- 0
-    dev_new <- sum(dr)
-    # if (it > 1 && (dev - dev_new) / (dev + .1) < control$epsilon) break
-    if (it > 2 && (dev - dev_new) / (dev + .1) < control$epsilon) break
-    if (control$trace) message("[", it, "] dev = ", dev_new)
-    dev <- dev_new
-    # print(dev_new)
-    L_old <- L; V_old <- V
+      # [efficient vectorization for extend rank 1]
+      if (rank ==1){
+          # [V step]
+          left = colSums(sweep(sqrt(S), 1, L, "*")^2)
+          right = colSums(sweep(S * Z, 1, L, "*"))
+          V = right/left
+          # [L step]
+          left = rowSums(sweep(sqrt(S), 2, V, "*")^2)
+          right = rowSums(sweep(S * Z, 2, V, "*"))
+          L = right/left  
+      }else{ 
+      # [iteration over n,p for extend rank d]
+          L <- normalize(L)
+          for (j in 1:p) {
+            aj <- valid[, j]
+            sj <- sqrt(S[, j]); Lj <- sweep(L, 1, sj, `*`)[aj, , drop = FALSE]
+            V[j, ] <- gsym_solve(crossprod(Lj), crossprod(Lj, (Z[, j] * sj)[aj]))
+          }
+          V <- normalize(V)
+          for (i in 1:n) {
+            ai <- valid[i, ]
+            si <- sqrt(S[i, ]); Vi <- sweep(V, 1, si, `*`)[ai, , drop = FALSE]
+            L[i, ] <- gsym_solve(crossprod(Vi), crossprod(Vi, (Z[i, ] * si)[ai]))
+          }
+      }
+      eta <- tcrossprod(L, V) + offset
+      mu <- family$linkinv(eta)
+      dr <- family$dev.resids(x[valid], mu[valid], weights[valid])
+      dr[is.na(dr) | is.nan(dr)] <- 0
+      dev_new <- sum(dr)
+      # if (it > 1 && (dev - dev_new) / (dev + .1) < control$epsilon) break
+      if (it > 2 && (dev - dev_new) / (dev + .1) < control$epsilon) break
+      if (control$trace) message("[", it, "] dev = ", dev_new)
+      dev <- dev_new
+      # print(dev_new)
+      L_old <- L; V_old <- V
   }
-  etaq = offset + tcrossprod(L_old, V_old)
-  etaq_identified = dmf_identify(etaq, extend_rank)
   
-  # [projection approach, commented for nonzero projection error]
-  # etaq = dmf_identify(offset, origin_rank)
-  # LL_diag = diag(crossprod(etaq$L))
-  # L = L_old - etaq$L %*% (1/LL_diag * crossprod(etaq$L, L_old))
-  # V = V_old - t(tcrossprod(crossprod(V_old, etaq$V), etaq$V))
-  list(L = etaq_identified$L, V = etaq_identified$V, deviance = dev, family = family)
+  # [identify the results]
+  dx1  = dx; dx1$deviance = dev; dx1$iter = it
+  if (adjust_svd) {
+    # TODO: [projection with dimension d]
+    # etaq = dmf_identify(offset, origin_rank)
+    # LL_diag = diag(crossprod(etaq$L))
+    # L = L_old - etaq$L %*% (1/LL_diag * crossprod(etaq$L, L_old))
+    # V = V_old - t(tcrossprod(crossprod(V_old, etaq$V), etaq$V))
+    # list(L = etaq_identified$L, V = etaq_identified$V, deviance = dev, family = family)
+    
+    # [needs to study Luis's efficient projection]
+    # D <- apply(dx$L, 2, norm2)
+    # ds <- list(d = D, u = sweep(dx$L, 2, D, `/`), v = dx$V) |>
+    #   svd_rank1update(dx1$L, dx1$V) # adjust
+    # dx1$L <- sweep(ds$u, 2, ds$d, `*`)
+    # dx1$V <- ds$v
+  } else {
+    L_old <- cbind(dx$L, L_old)
+    V_old <- cbind(dx$V, V_old)
+    ql <- qr(L_old); qv <- qr(V_old)
+    sr <- svd(tcrossprod(qr.R(ql), qr.R(qv)))
+    L <- qr.Q(ql) %*% sweep(sr$u, 2, sr$d, `*`)
+    V <- qr.Q(qv) %*% sr$v
+    dx1$L = L; dx1$V = V
+  }
+  if(refine){
+    return(dmf(x, rank = ncol(dx1$L), family = dx$family, weights = dx$prior.weights, start = dx1)) # refine
+  }else{return(dx1)}
 }
 
