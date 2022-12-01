@@ -599,25 +599,28 @@ act_rank <- function(x, family = gaussian(), weights = 1, offset = zeros(x)) {
 onatski_rank = function(x, family, q_max, weights = 1, offset = zeros(x),
                             max_iter = 10, fit_full = FALSE) {
   n <- nrow(x); p <- ncol(x)
-  if (p < q_max + 5 ) stop("decrease rmax")
-
-  fit_result <- dmf(x, family, rank = ifelse(fit_full, p, q_max), weights, offset)
-  eta <- tcrossprod(fit_result$L, fit_result$V)
-  cov_matrix <- cov(eta)
-  tol <- 1
-  j_update <- q_max + 1
-  while (tol >= 1) {
-    j <- j_update
-    lambda_hats <- eigen(cov_matrix)$value
-    y_reg <- lambda_hats[j:(j + 4)]
-    x_reg <- (j + seq(-1, 3, 1)) ^ (2 / 3)
-    delta_temp <- as.numeric(2 * abs(coef(lm(y_reg ~ x_reg))))[2]
-    flag <- which((-diff(lambda_hats) >= delta_temp))
-    q_hat <- ifelse(length(flag) == 0, 0, tail(flag[flag <= q_max], 1))
-    j_update <- q_hat + 1
-    tol <- abs(j_update - j)
+  if (p < q_max + 5 ) stop('decrease rmax')
+  
+  if(fit_full){fit_result = dmf(x, family, rank= p, weights, offset)
+  }else{fit_result = dmf(x, family, rank= q_max, weights, offset)  }
+  
+  eta = tcrossprod(fit_result$L, fit_result$V)
+  cov_matrix = cov(eta)
+  lambda_hats = eigen(cov_matrix)$value
+  tol = 1e3
+  j_update = q_max + 1
+  while (tol>=1){
+    j = j_update
+    y_reg = lambda_hats[j:(j+4)]
+    x_reg = (j + seq(-1, 3, 1))^(2/3)
+    delta_temp = as.numeric(2* abs(coef(lm(y_reg ~ x_reg))))[2]
+    flag = which((-diff(lambda_hats)>= delta_temp))
+    if(length(flag) == 0){q_hat = 0}else{q_hat = tail(flag[flag<=q_max],1)}
+    j_update = q_hat + 1
+    tol = abs(j_update -j)
   }
-  list(q_hat = q_hat, delta = delta_temp, L = fit_result$L, V = fit_result$V,
-       deviance = fit_result$deviance, family = fit_result$family)
+  
+  return (list(q_hat = q_hat, delta = delta_temp, L =fit_result$L,
+               V = fit_result$V, deviance = fit_result$deviance, family = fit_result$family))
 }
 
