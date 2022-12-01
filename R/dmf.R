@@ -477,7 +477,7 @@ generate_Y <- function (glm_family, eta_star, phi = 1, glm_weights = 1) {
 #' @param offset Entrywise offset.
 #' @param chisq_stat return normalized vector or the P value of chi_square statistics?
 #' @export
-family_test <- function (x, lv, G, weights = 1, offset = zeros(x), chisq_stat = FALSE) {
+family_test <- function (x, lv, G, weights = 1, offset = zeros(x)) {
   n <- nrow(x); p <- ncol(x)
   if (n < p) stop("fewer observations than predictors")
   if (length(weights) == 1)
@@ -515,23 +515,26 @@ family_test <- function (x, lv, G, weights = 1, offset = zeros(x), chisq_stat = 
   eta_hat <- data.frame(eta = c(lv$family$linkfun(mu_hat)))
   cut_quantle <- seq(0, 1, 1 / G)
   # TODO: remove magrittr dependency
-  eta_g = eta_hat %>% group_by() %>% mutate(G = cut(eta, quantile(eta, cut_quantle),
-                                                    labels = 1:G,
+  #     : warning on num cut less than G
+  eta_g = eta_hat %>% group_by() %>% mutate(G = cut(eta, unique(quantile(eta, cut_quantle)), 
                                                     include.lowest = TRUE))
+  eta_g$G = as.numeric(as.factor(eta_g$G))
+  num_cut = length(unique(eta_g$G))
+  num_remove = G - num_cut 
 
   # [ construct statistics ]
   resids <- matrix(x - mu_hat) / sqrt(n * p)
   var <- matrix(lv$family$variance(mu_hat) / weights) / (n * p)
 
-  s_vec <- matrix(0, nrow = G)
-  d_diag <- rep(0, G)
-  for (g in 1:G) {
-    s_vec[g] <- sum(resids[eta_g$G == g])
-    d_diag[g] <- phi_hat * sum(var[eta_g$G == g])
-  }
-
-  if (chisq_stat == FALSE) s_vec / sqrt(d_diag) else
-    crossprod(t(crossprod(s_vec, solve(diag(d_diag)))), s_vec)[1] # FIXME
+  # [ Vectorized the for loop]
+  s_vec = matrix(sapply(seq_len(num_cut), function(x) sum(resids[eta_g$G==x])), nrow = num_cut)
+  d_diag =  sapply(seq_len(num_cut), function(x) phi_hat * sum(var[eta_g$G==x]))
+  
+  # [Chisq is alwasy returned]
+  return(list(norm_vec = c(s_vec/sqrt(d_diag), rep(num_remove,0)),
+              chisq_stat = crossprod(t(crossprod(s_vec, diag(1/d_diag))), s_vec)[1]))
+  # if (chisq_stat == FALSE) s_vec / sqrt(d_diag) else
+  #   crossprod(t(crossprod(s_vec, solve(diag(d_diag)))), s_vec)[1] # FIXME
 }
 
 
