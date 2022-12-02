@@ -75,7 +75,8 @@ dmf_center <- function (lv, x0 = rep(1, nrow(lv$L)), reorder = TRUE) {
 #' @return Sign-normalized DMF structure.
 #' @export
 dmf_sign <- function (lv) {
-  s <- sign(lv$L[1, ])
+  # s <- sign(lv$L[1, ])
+  s <- sign(lv$V[1, ])
   lv$L <- sweep(lv$L, 2, s, `*`)
   lv$V <- sweep(lv$V, 2, s, `*`)
   lv
@@ -120,21 +121,20 @@ dmf <- function (x, family = gaussian(),
   if (any(apply(!valid, 1, all)) || any(apply(!valid, 2, all)))
     stop("full row or column with zero weights or missing values")
 
-  # [ initialize ]
-  mu <- family_initialize(x, weights, family)
-  eta <- family$linkfun(mu)
-  eta[!valid] <- mu[!valid] <- 0
+  
   if (is.null(start)) {
+    # [ initialize ]
+    mu <- family_initialize(x, weights, family)
+    eta <- family$linkfun(mu)
+    #[transformation from init can gets negative]
+    # valid <- valid & family$valideta(eta) ?
     if (init_svd) {
       se <- RSpectra::svds(eta - offset, rank)
       L <- sweep(se$u, 2, se$d, `*`); V <- se$v
-      eta <- tcrossprod(L, V) + offset
-      mu <- family$linkinv(eta)
     } else {
       L <- (eta - offset)[, 1:rank, drop = FALSE]
-      # V <- matrix(0, nrow = p, ncol = rank); diag(V) <- 1
-      V <- matrix(nrow = p, ncol = rank)
-    }
+      V <- matrix(0, nrow = p, ncol = rank); diag(V) <- 1
+    } 
   } else {
     L <- start$L; V <- start$V
     if (nrow(L) != n || ncol(L) != rank)
@@ -233,7 +233,7 @@ dmf_symm <- function (x, family = gaussian(),
 
   # [ initialize ]
   mu <- family_initialize(x, weights, family)
-  eta <- family$linkfun(mu)
+  eta <- family$linkfun(mu) 
   eta[!valid] <- mu[!valid] <- 0
   L <- (eta - offset)[, 1:rank, drop = FALSE] # V = I_n
   V <- matrix(nrow = n, ncol = rank)
@@ -532,19 +532,19 @@ family_test <- function (x, lv, G, weights = 1, offset = zeros(x)) {
   cut_quantle <- seq(0, 1, 1 / G)
   # TODO: remove magrittr dependency
   #     : warning on num cut less than G
-  eta_g = eta_hat %>% group_by() %>% mutate(G = cut(eta, unique(quantile(eta, cut_quantle)), 
+  eta_g <- eta_hat %>% group_by() %>% mutate(G = cut(eta, unique(quantile(eta, cut_quantle)), 
                                                     include.lowest = TRUE))
-  eta_g$G = as.numeric(as.factor(eta_g$G))
-  num_cut = length(unique(eta_g$G))
-  num_remove = G - num_cut 
+  eta_g$G <- as.numeric(as.factor(eta_g$G))
+  num_cut <- length(unique(eta_g$G))
+  num_remove <- G - num_cut 
 
   # [ construct statistics ]
   resids <- matrix(x - mu_hat) / sqrt(n * p)
   var <- matrix(lv$family$variance(mu_hat) / weights) / (n * p)
 
   # [ Vectorized the for loop]
-  s_vec = matrix(sapply(seq_len(num_cut), function(x) sum(resids[eta_g$G==x])), nrow = num_cut)
-  d_diag =  sapply(seq_len(num_cut), function(x) phi_hat * sum(var[eta_g$G==x]))
+  s_vec <- matrix(sapply(seq_len(num_cut), function(x) sum(resids[eta_g$G==x])), nrow = num_cut)
+  d_diag <- sapply(seq_len(num_cut), function(x) phi_hat * sum(var[eta_g$G==x]))
   
   # [Chisq is alwasy returned]
   return(list(norm_vec = c(s_vec/sqrt(d_diag), rep(num_remove,0)),
@@ -562,7 +562,7 @@ family_test <- function (x, lv, G, weights = 1, offset = zeros(x)) {
 #' @param offset Entrywise offset.
 #' @export
 act_rank <- function(x, family = gaussian(), weights = 1, offset = zeros(x)) {
-  n <- nrow(x); p <- ncol(x); d = ncol(x)
+  n <- nrow(x); p <- ncol(x); d <- ncol(x)
   if (n < p) stop("fewer observations than predictors")
   if (length(weights) == 1)
     weights <- rep(weights, n * p)
@@ -615,28 +615,28 @@ act_rank <- function(x, family = gaussian(), weights = 1, offset = zeros(x)) {
 #' @param max_iter Maximum iteration.
 #' @param fit_full Fit eta with full rank matrix? Always recommended if computation speed is permitted
 #' @export
-onatski_rank = function(x, family, q_max, weights = 1, offset = zeros(x),
+onatski_rank <- function(x, family, q_max, weights = 1, offset = zeros(x),
                             max_iter = 10, fit_full = FALSE) {
   n <- nrow(x); p <- ncol(x)
   if (p < q_max + 5 ) stop('decrease rmax')
   
-  if(fit_full){fit_result = dmf(x, family, rank= p, weights, offset)
-  }else{fit_result = dmf(x, family, rank= q_max, weights, offset)  }
+  if(fit_full){fit_result <- dmf(x, family, rank= p, weights, offset)
+  }else{fit_result <- dmf(x, family, rank= q_max, weights, offset)  }
   
-  eta = tcrossprod(fit_result$L, fit_result$V)
-  cov_matrix = cov(eta)
-  lambda_hats = eigen(cov_matrix)$value
+  eta <- tcrossprod(fit_result$L, fit_result$V)
+  cov_matrix <- cov(eta)
+  lambda_hats <- eigen(cov_matrix)$value
   tol = 1e3
-  j_update = q_max + 1
+  j_update <- q_max + 1
   while (tol>=1){
-    j = j_update
-    y_reg = lambda_hats[j:(j+4)]
-    x_reg = (j + seq(-1, 3, 1))^(2/3)
-    delta_temp = as.numeric(2* abs(coef(lm(y_reg ~ x_reg))))[2]
-    flag = which((-diff(lambda_hats)>= delta_temp))
-    if(length(flag) == 0){q_hat = 0}else{q_hat = tail(flag[flag<=q_max],1)}
-    j_update = q_hat + 1
-    tol = abs(j_update -j)
+    j <- j_update
+    y_reg <- lambda_hats[j:(j+4)]
+    x_reg <- (j + seq(-1, 3, 1))^(2/3)
+    delta_temp <- as.numeric(2* abs(coef(lm(y_reg ~ x_reg))))[2]
+    flag <- which((-diff(lambda_hats)>= delta_temp))
+    if(length(flag) == 0){q_hat = 0}else{q_hat <- tail(flag[flag<=q_max],1)}
+    j_update <- q_hat + 1
+    tol <- abs(j_update -j)
   }
   
   return (list(q_hat = q_hat, delta = delta_temp, L =fit_result$L,
@@ -647,16 +647,16 @@ onatski_rank = function(x, family, q_max, weights = 1, offset = zeros(x),
 #' @param eta Input matrix to conduct force-sign svd.
 #' @param q designed rank of the force-sign svd.
 #' @export
-dmf_identify = function(eta, q){
+dmf_identify <- function(eta, q){
   
-  svd_eta = svd(eta, nu = q, nv = q)
-  negative_flag = c(1:q)[svd_eta$u[1,]<0]
+  svd_eta <- svd(eta, nu = q, nv = q)
+  negative_flag <- c(1:q)[svd_eta$v[1,]<0]
   
-  svd_eta$u[,negative_flag] = matrix(-svd_eta$u[,negative_flag])
-  svd_eta$v[,negative_flag] = matrix(-svd_eta$v[,negative_flag])
+  svd_eta$u[,negative_flag] <- matrix(-svd_eta$u[,negative_flag])
+  svd_eta$v[,negative_flag] <- matrix(-svd_eta$v[,negative_flag])
   # [dmf identify l.v]
-  V = svd_eta$v
-  L = tcrossprod(svd_eta$u, diag(svd_eta$d[1:q]))
+  V <- svd_eta$v
+  L <- tcrossprod(svd_eta$u, diag(svd_eta$d[1:q]))
   return (list(L = L, V = V))
 }
 
@@ -672,12 +672,12 @@ dmf_identify = function(eta, q){
 #' @return Extended DMF structure.
 #' @export
 # x = X; family = glm_family; rank = 1; weights = glm_weights; offset = eta_q; control = glm.control(epsilon = 1e-6, maxit = 100)
-dmf_rank1update <- function (dx, x, adjust_svd = FALSE, maxit = 100, refine = TRUE, ...) {
+dmf_rank1update <- function (dx, x, adjust_svd = FALSE, refine = TRUE, control = glm.control(epsilon = 1e-6, maxit = 100), ...) {
   
   # [can changed to vectorized operation for rank 1 extension]
   dx1 <- dmf(x, rank = 1, offset = tcrossprod(dx$L, dx$V), family = dx$family,
              weights = dx$prior.weights,
-             control = glm.control(maxit = maxit), ...)
+             control = control, ...)
   
   if (adjust_svd) {
     D <- apply(dx$L, 2, norm2)
@@ -703,10 +703,10 @@ dmf_extend <- function (x, dx, extend_rank = rank + 1, adjust_svd = FALSE,
                         ){
   
   # [ some definition inherited from offset dx fit]
-  n <- nrow(x); p <- ncol(x); origin_rank  = ncol(dx$L); 
-  family = dx$family; weights = dx$prior.weights
-  offset = tcrossprod(dx$L, dx$V)
-  rank = extend_rank -origin_rank 
+  n <- nrow(x); p <- ncol(x); origin_rank <- ncol(dx$L); 
+  family <- dx$family; weights <- dx$prior.weights
+  offset <- tcrossprod(dx$L, dx$V)
+  rank <- extend_rank -origin_rank 
   
   # [ no need for checking since everything is inherited from dx]
   valid <- (weights > 0) & (!is.na(x))
@@ -714,6 +714,10 @@ dmf_extend <- function (x, dx, extend_rank = rank + 1, adjust_svd = FALSE,
   # [ initialize ]
   mu <- family_initialize(x, weights, family)
   eta <- family$linkfun(mu)
+  
+  #[transformation from init can gets negative]
+  # valid <- valid & family$valideta(eta) ?
+
   eta[!valid] <- mu[!valid] <- 0
   L <- (eta - offset)[, 1:rank, drop = FALSE] # V = I_p
   V <- matrix(nrow = p, ncol = rank)
@@ -731,15 +735,15 @@ dmf_extend <- function (x, dx, extend_rank = rank + 1, adjust_svd = FALSE,
       Z[!valid] <- 0
       
       # [efficient vectorization for extend rank 1]
-      if (rank ==1){
+      if (rank == 1){
           # [V step]
-          left = colSums(sweep(sqrt(S), 1, L, "*")^2)
-          right = colSums(sweep(S * Z, 1, L, "*"))
-          V = right/left
+          left <- colSums(sweep(sqrt(S), 1, L, "*")^2)
+          right <- colSums(sweep(S * Z, 1, L, "*"))
+          V <- right/left
           # [L step]
-          left = rowSums(sweep(sqrt(S), 2, V, "*")^2)
-          right = rowSums(sweep(S * Z, 2, V, "*"))
-          L = right/left  
+          left <- rowSums(sweep(sqrt(S), 2, V, "*")^2)
+          right <- rowSums(sweep(S * Z, 2, V, "*"))
+          L <- right/left  
       }else{ 
       # [iteration over n,p for extend rank d]
           L <- normalize(L)
@@ -769,7 +773,7 @@ dmf_extend <- function (x, dx, extend_rank = rank + 1, adjust_svd = FALSE,
   }
   
   # [identify the results]
-  dx1  = dx; dx1$deviance = dev; dx1$iter = it
+  dx1  <- dx; dx1$deviance <- dev; dx1$iter <- it
   if (adjust_svd) {
     # TODO: [projection with dimension d]
     # etaq = dmf_identify(offset, origin_rank)
