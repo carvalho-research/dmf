@@ -26,7 +26,11 @@ dmf_symm(
 
 \item{offset}{Entrywise offset.}
 
-\item{control}{Algorithm control parameters (see \code{glm.control}).}
+\item{maxit}{integer giving the maximal number of IWLS iterations.}
+
+\item{epsilon}{positive convergence tolerance \verb{\\epsilon}; the iterations converge.}
+
+\item{trace}{logical indicating if output should be produced for each iteration.}
 }
 \value{
 DMF structure.

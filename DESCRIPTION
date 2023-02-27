@@ -7,11 +7,15 @@ Authors@R:
            role = c("aut", "cre"),
            email = "lecarval@math.bu.edu",
            comment = c(ORCID = "YOUR-ORCID-ID"))
-Description: What the package does (one paragraph).
-Imports:
-  RSpectra
+    person(given = "Liang",
+           family = "Wang",
+           role = c("aut", "cre"),
+           email = "leonwang@bu.edu",
+           comment = c(ORCID = "0000-0002-2399-463X"))
+Description: Perforance Deviance Matrix Factorization.
 License: `use_mit_license()`
 Encoding: UTF-8
 LazyData: true
+Imports: RSpectra, stats, utils, MASS, dplyr
 Roxygen: list(markdown = TRUE)
-RoxygenNote: 7.2.2
+RoxygenNote: 7.2.3

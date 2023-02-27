@@ -4,7 +4,7 @@
 \alias{family_test}
 \title{Perform a generalized Hosmer–Lemeshow test , (L * V' + V * L') / 2.}
 \usage{
-family_test(x, lv, G, weights = 1, offset = zeros(x), chisq_stat = FALSE)
+family_test(x, lv, G, weights = 1, offset = zeros(x), dispersion = NULL)
 }
 \arguments{
 \item{x}{Input matrix to be factorized.}
@@ -17,7 +17,7 @@ family_test(x, lv, G, weights = 1, offset = zeros(x), chisq_stat = FALSE)
 
 \item{offset}{Entrywise offset.}
 
-\item{chisq_stat}{return normalized vector or the P value of chi_square statistics?}
+\item{dispersion}{If cutomized dispersion is provided}
 }
 \description{
 Perform a generalized Hosmer–Lemeshow test , (L * V' + V * L') / 2.
