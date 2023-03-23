@@ -81,7 +81,6 @@ dmf_center <- function (lv, x0 = rep(1, nrow(lv$L)), reorder = TRUE) {
 #' @return Sign-normalized DMF structure.
 #' @export
 dmf_sign <- function (lv) {
-  # s <- sign(lv$L[1, ])
   s <- sign(lv$V[1, ])
   lv$L <- sweep(lv$L, 2, s, `*`)
   lv$V <- sweep(lv$V, 2, s, `*`)
@@ -103,7 +102,7 @@ dmf_sign <- function (lv) {
 #' @export
 dmf <- function (x, family = gaussian(),
                  rank = ncol(x), weights = 1, offset = zeros(x),
-                 start = NULL, init_svd = FALSE,
+                 start = NULL, init_svd = TRUE,
                  control = glm.control(epsilon = 1e-6, maxit = 100)) {
   n <- nrow(x); p <- ncol(x)
   rank <- as.integer(rank)
@@ -150,15 +149,12 @@ dmf <- function (x, family = gaussian(),
     eta <- tcrossprod(L, V) + offset
     mu <- family$linkinv(eta)
   }
-  # [initialize without prior knowledge failed]
-  # eta <- tcrossprod(L, V) + offset
-  # mu <- family$linkinv(eta)
+
 
   # [ iterate ]
   for (it in 1:control$maxit) {
     mu_eta <- matrix(family$mu.eta(eta), nrow = n, ncol = p)
     var <- matrix(family$variance(mu), nrow = n, ncol = p)
-    # W = mu_eta / var * (x - mu) * weights
     is_inf_mu <- is.infinite(mu)
     S <- mu_eta / var * mu_eta * weights
     S[is_inf_mu] <- 0
@@ -183,7 +179,7 @@ dmf <- function (x, family = gaussian(),
     eta <- tcrossprod(L, V) + offset
     mu <- family$linkinv(eta)
     dr <- family$dev.resids(x[valid], mu[valid], weights[valid])
-    dr[is.na(dr) | is.nan(dr)] <- 0
+    dr[is.na(dr) | is.nan(dr)] <- 0 #[infinite mu setting dr to 0]
     dev_new <- sum(dr)
     if (it > 1 && (dev - dev_new) / (dev + .1) < control$epsilon) break
     if (control$trace) message("[", it, "] dev = ", dev_new)
@@ -426,7 +422,7 @@ dmf_rank1update <- function (dx, x, adjust_svd = FALSE, maxit = 100, refine = TR
 
   if (adjust_svd) {
     D <- apply(dx$L, 2, norm2)
-    ds <- list(d = D, u = sweep(dx$L, 2, D, `/`), v = dx$V) |>
+    ds <- list(d = D, u = sweep(dx$L, 2, D, `/`), v = dx$V) %>%
       svd_rank1update(dx1$L, dx1$V) # adjust
     dx1$L <- sweep(ds$u, 2, ds$d, `*`)
     dx1$V <- ds$v
@@ -487,7 +483,8 @@ generate_Y <- function (glm_family, eta_star, phi = 1, glm_weights = 1) {
               gaussian = rnorm(y_len, mu, sqrt(phi)),
               poisson = rpois(y_len, mu),
               binomial = rbinom(y_len, glm_weights, mu),
-              Gamma = rgamma(y_len ,shape = phi, scale = mu / phi),
+              #Gamma = rgamma(y_len ,shape = phi, scale = mu / phi),
+              Gamma = rgamma(y_len ,shape = 1/phi, scale = mu  * phi), # var(data) = phi * mu^2
               negative.binomial = rnegbin(y_len, mu = mu, theta = phi),
               stop("family `", glm_family$family, "` not recognized"))
   dim(y) <- dim(eta_star)
@@ -504,6 +501,7 @@ generate_Y <- function (glm_family, eta_star, phi = 1, glm_weights = 1) {
 #' @param dispersion If cutomized dispersion is provided
 #' @export
 family_test <- function (x, lv, G, weights = 1, offset = zeros(x), dispersion = NULL) {
+
   n <- nrow(x); p <- ncol(x)
   if (n < p) stop("fewer observations than predictors")
   if (length(weights) == 1)
@@ -523,22 +521,27 @@ family_test <- function (x, lv, G, weights = 1, offset = zeros(x), dispersion = 
   if (any(apply(!valid, 1, all)) || any(apply(!valid, 2, all)))
     stop("full row or column with zero weights or missing values")
 
+  # [ finite mu fit]
+  mu_hat <- dmf_fitted(lv)
+  is_inf_mu <- is.infinite(mu_hat)
+
   G <- as.integer(G)
   if (G > n*p) stop('fewer observations than groups of partition')
 
-  mu_hat <- dmf_fitted(lv)
   #if (endsWith(lv$family$family,'binomial')) x <- x / weights
 
   if (!is.null(dispersion)){
     phi_hat <- dispersion
   }else{
     if (lv$family$family == "Gamma") {
-      phi_hat <- 1 / mean((x - mu_hat) ^ 2)
+      phi_hat = 1
+      #phi_hat <- 1 / mean((x - mu_hat) ^ 2) # todo: check Gamma dispersion correct?
     } else if (lv$family$family == "gaussian") {
-      phi_hat <- mean((x - mu_hat) ^ 2)
+      phi_hat <- mean((x[!is_inf_mu] - mu_hat[!is_inf_mu]) ^ 2)
     } else if (startsWith(lv$family$family, "quasi")) {
-      phi_hat <- mean((x - mu_hat) ^ 2)
-    } else {
+      phi_hat <- mean((x[!is_inf_mu] - mu_hat[!is_inf_mu]) ^ 2)
+    }
+    else {
       phi_hat <- 1
     }
   }
@@ -552,17 +555,27 @@ family_test <- function (x, lv, G, weights = 1, offset = zeros(x), dispersion = 
   num_cut <- length(unique(eta_g$G))
   num_remove <- G - num_cut
 
+
   # [ construct statistics ]
   resids <- matrix((x - mu_hat)  * weights) / sqrt(n * p)
-  var <- matrix(lv$family$variance(mu_hat) * weights) / (n * p)
+  var <- matrix(lv$family$variance(mu_hat)* weights) / (n * p)
+  # resids[is_inf_mu] = 0 # setting infinite mu fit to 0
+  # inf_group <- eta_g$G[is_inf_mu]
+
 
   # [ Vectorized the for loop]
-  s_vec <- matrix(sapply(seq_len(num_cut), function(x) sum(resids[eta_g$G==x])), nrow = num_cut)
-  d_diag <- sapply(seq_len(num_cut), function(x) phi_hat * sum(var[eta_g$G==x]))
+  valid_group <- seq_len(num_cut)
+  # valid_group <- valid_group[valid_group!=inf_group]
+  s_vec <- sapply(valid_group, function(x) sum(resids[eta_g$G==x]))
+  d_diag <- sapply(valid_group, function(x) phi_hat * sum(var[eta_g$G==x]))
+
+  norm_vec = c(s_vec/sqrt(d_diag), rep(num_remove,0))
+  norm_vec[is.na(norm_vec)] = 0
+
 
   # [Chisq is always returned]
-  return(list(norm_vec = c(s_vec/sqrt(d_diag), rep(num_remove,0)),
-              chisq_stat = crossprod(t(crossprod(s_vec, diag(1/d_diag))), s_vec)[1]))
+  return(list(norm_vec = norm_vec,
+  chisq_stat = crossprod(norm_vec)))
 }
 
 
@@ -690,7 +703,7 @@ dmf_rank1update <- function (dx, x, adjust_svd = FALSE, refine = TRUE, control =
 
   if (adjust_svd) {
     D <- apply(dx$L, 2, norm2)
-    ds <- list(d = D, u = sweep(dx$L, 2, D, `/`), v = dx$V) |>
+    ds <- list(d = D, u = sweep(dx$L, 2, D, `/`), v = dx$V) %>%
       svd_rank1update(dx1$L, dx1$V) # adjust
     dx1$L <- sweep(ds$u, 2, ds$d, `*`)
     dx1$V <- ds$v
