@@ -373,59 +373,6 @@ dmf_multinom <- function (x, rank = dim(x)[3],
 
 
 # [ facilities ]
-svd_rank1update <- function (sx, l, v) {
-  q <- ncol(sx$u) # == ncol(sx$v)
-  nl <- norm2(l); nv <- norm2(v)
-  delta <- nl * nv; l <- l / nl; v <- v / nv
-  ul <- l - sx$u %*% crossprod(sx$u, l); nl <- norm2(ul)
-  uv <- v - sx$v %*% crossprod(sx$v, v); nv <- norm2(uv)
-
-  B <- delta * tcrossprod(c(crossprod(sx$u, l), nl),
-                          c(crossprod(sx$v, v), nv))
-  diag(B)[1:q] <- diag(B)[1:q] + sx$d[1:q]
-  sb <- svd(B)
-  list(d = sb$d,
-       u = cbind(sx$u, ul / nl) %*% sb$u,
-       v = cbind(sx$v, uv / nv) %*% sb$v)
-}
-
-#' Increases the rank of a DMF.
-#'
-#' @param dx DMF structure for x of rank q.
-#' @param x The matrix that was partially decomposed.
-#' @param adjust_svd Should the DMF be orthogonalized after increasing rank?
-#' @param maxit Maximum number of iterations for rank-one offset DMF.
-#' @param ... Other parameters?
-#' @return DMF structure for x of rank q + 1.
-#' @export
-dmf_rank1update <- function (dx, x, adjust_svd = FALSE, maxit = 100, refine = TRUE, ...) {
-  dx1 <- dmf(x, rank = 1, offset = tcrossprod(dx$L, dx$V), family = dx$family,
-             weights = dx$prior.weights,
-             control = glm.control(maxit = maxit), ...)
-  # [changed to vecorized operation for rank 1 extension]
-  # dx1 <- dmf_extend(x, dx$family,
-  #                   origin_rank = ncol(dx$L),
-  #                   extend_rank = ncol(dx$L) + 1, offset = tcrossprod(dx$L, dx$V),
-  #                   weights = dx$prior.weights, control = glm.control(maxit = maxit))
-
-  if (adjust_svd) {
-    D <- apply(dx$L, 2, norm2)
-    ds <- svd_rank1update(list(d = D, u = sweep(dx$L, 2, D, `/`), v = dx$V),
-                          dx1$L, dx1$V) # adjust
-    dx1$L <- sweep(ds$u, 2, ds$d, `*`)
-    dx1$V <- ds$v
-  } else {
-    dx1$L <- cbind(dx$L, dx1$L)
-    dx1$V <- cbind(dx$V, dx1$V)
-  }
-  if (refine)
-    dmf(x, rank = ncol(dx1$L), family = dx$family, weights = dx$prior.weights,
-        start = dx1)
-  else dx1
-}
-
-
-
 #' Fitted values from a DMF.
 #'
 #' @param lv DMF structure
@@ -468,9 +415,9 @@ dmf_residuals <- function (x, lv, rank = ncol(lv$L), subset = seq_len(nrow(lv$L)
 #' @param family GLM family object specifying sampling distribution
 #' @param eta linear predictor
 #' @param phi dispersion parameter, defaults to unit
-#' @param weights family weights
+#' @param weights weights for the binomial family
 #' @export
-dmf_sample <- function (family, eta, phi = 1, glm_weights = 1) {
+dmf_sample <- function (family, eta, phi = 1, weights = 1) {
   y_len <- prod(dim(eta))
   mu <- family$linkinv(eta)
   family <- family$family
@@ -478,11 +425,11 @@ dmf_sample <- function (family, eta, phi = 1, glm_weights = 1) {
   y <- switch(family,
               gaussian = rnorm(y_len, mu, sqrt(phi)),
               poisson = rpois(y_len, mu),
-              binomial = rbinom(y_len, glm_weights, mu),
+              binomial = rbinom(y_len, weights, mu),
               Gamma = rgamma(y_len, shape = 1 / phi, scale = mu * phi),
               negative.binomial = rnegbin(y_len, mu = mu, theta = phi),
-              stop("family `", glm_family$family, "` not recognized"))
-  dim(y) <- dim(eta_star)
+              stop("family `", family, "` not recognized"))
+  dim(y) <- dim(eta)
   y
 }
 
@@ -664,19 +611,77 @@ dmf_identify <- function(eta, q) {
 }
 
 
-#' extend rank from q to an arbitrary rank `\tilde{q}` through offset = eta_q
-#' @param dx dmf rank q fit result
-#' @param x Input matrix to be factorized.
-#' @param adjust_svd Todo:fixme.
-#' @param refine boolen to indicate whether or not to refine rank q + 1 fit `\Lambda` V^T
-#' @param control Algorithm control parameters (see \code{glm.control}).
+svd_rank1update <- function (sx, l, v) {
+  q <- ncol(sx$u) # == ncol(sx$v)
+  nl <- norm2(l); nv <- norm2(v)
+  delta <- nl * nv; l <- l / nl; v <- v / nv
+  ul <- l - sx$u %*% crossprod(sx$u, l); nl <- norm2(ul)
+  uv <- v - sx$v %*% crossprod(sx$v, v); nv <- norm2(uv)
+
+  B <- delta * tcrossprod(c(crossprod(sx$u, l), nl),
+                          c(crossprod(sx$v, v), nv))
+  diag(B)[1:q] <- diag(B)[1:q] + sx$d[1:q]
+  sb <- svd(B)
+  list(d = sb$d,
+       u = cbind(sx$u, ul / nl) %*% sb$u,
+       v = cbind(sx$v, uv / nv) %*% sb$v)
+}
+
+#' Increases the rank of a DMF.
+#'
+#' @param x The matrix that was partially decomposed.
+#' @param dx DMF structure for x of rank q.
+#' @param adjust_svd Should the DMF be orthogonalized after increasing rank?
+#' @param refine refine new DMF with another iteration?
+#' @param maxit Maximum number of iterations for rank-one offset DMF.
+#' @param control algorithm control parameters (see \code{glm.control}).
+#' @param ... other parameters passed to dmf calls
+#' @return DMF structure for x of rank q + 1.
+#' @export
+dmf_rank1update <- function (x, dx, adjust_svd = FALSE, refine = TRUE,
+                             control = glm.control(epsilon = 1e-6, maxit = 100),
+                             ...) {
+  dx1 <- dmf(x, rank = 1, offset = tcrossprod(dx$L, dx$V), family = dx$family,
+             weights = dx$prior.weights, control = control, ...)
+  # [changed to vecorized operation for rank 1 extension]
+  # dx1 <- dmf_extend(x, dx$family,
+  #                   origin_rank = ncol(dx$L),
+  #                   extend_rank = ncol(dx$L) + 1, offset = tcrossprod(dx$L, dx$V),
+  #                   weights = dx$prior.weights, control = glm.control(maxit = maxit))
+
+  if (adjust_svd) {
+    D <- apply(dx$L, 2, norm2)
+    ds <- svd_rank1update(list(d = D, u = sweep(dx$L, 2, D, `/`), v = dx$V),
+                          dx1$L, dx1$V) # adjust
+    dx1$L <- sweep(ds$u, 2, ds$d, `*`)
+    dx1$V <- ds$v
+  } else {
+    dx1$L <- cbind(dx$L, dx1$L)
+    dx1$V <- cbind(dx$V, dx1$V)
+  }
+  if (refine)
+    dmf(x, rank = ncol(dx1$L), family = dx$family, weights = dx$prior.weights,
+        start = dx1)
+  else dx1
+}
+
+
+
+#' Extend rank from q to an arbitrary rank.
+#'
+#' @param x The matrix that was partially decomposed
+#' @param dx DMF structure for x of rank q
+#' @param extend_rank new rank, defaults to q + 1
+#' @param adjust_svd Should the DMF be orthogonalized after increasing rank?
+#' @param refine refine new DMF with another iteration?
+#' @param control algorithm control parameters (see \code{glm.control}).
 #' @return Extended DMF structure.
 #' @export
-dmf_extend <- function (x, dx, extend_rank = rank + 1, adjust_svd = FALSE, refine = FALSE,
+dmf_extend <- function (x, dx, extend_rank = ncol(dx$L) + 1,
+                        adjust_svd = FALSE, refine = FALSE,
                         control = glm.control(epsilon = 1e-6, maxit = 100)) {
-
   # [ some definition inherited from offset dx fit]
-  n <- nrow(x); p <- ncol(x); origin_rank <- ncol(dx$L);
+  n <- nrow(x); p <- ncol(x); origin_rank <- ncol(dx$L)
   family <- dx$family; weights <- dx$prior.weights
   offset <- tcrossprod(dx$L, dx$V)
   rank <- extend_rank - origin_rank

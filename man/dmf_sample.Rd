@@ -4,7 +4,7 @@
 \alias{dmf_sample}
 \title{Sample data from a dmf linear predictor.}
 \usage{
-dmf_sample(family, eta, phi = 1, glm_weights = 1)
+dmf_sample(family, eta, phi = 1, weights = 1)
 }
 \arguments{
 \item{family}{GLM family object specifying sampling distribution}
@@ -13,7 +13,7 @@ dmf_sample(family, eta, phi = 1, glm_weights = 1)
 
 \item{phi}{dispersion parameter, defaults to unit}
 
-\item{weights}{family weights}
+\item{weights}{weights for the binomial family}
 }
 \description{
 Sample data from a dmf linear predictor.

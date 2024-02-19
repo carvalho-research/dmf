@@ -2,31 +2,33 @@
 % Please edit documentation in R/dmf.R
 \name{dmf_extend}
 \alias{dmf_extend}
-\title{extend rank from q to an arbitrary rank \verb{\\tilde\{q\}} through offset = eta_q}
+\title{Extend rank from q to an arbitrary rank.}
 \usage{
 dmf_extend(
   x,
   dx,
-  extend_rank = rank + 1,
+  extend_rank = ncol(dx$L) + 1,
   adjust_svd = FALSE,
   refine = FALSE,
   control = glm.control(epsilon = 1e-06, maxit = 100)
 )
 }
 \arguments{
-\item{x}{Input matrix to be factorized.}
+\item{x}{The matrix that was partially decomposed}
 
-\item{dx}{dmf rank q fit result}
+\item{dx}{DMF structure for x of rank q}
 
-\item{adjust_svd}{Todo:fixme.}
+\item{extend_rank}{new rank, defaults to q + 1}
 
-\item{refine}{boolen to indicate whether or not to refine rank q + 1 fit \verb{\\Lambda} V^T}
+\item{adjust_svd}{Should the DMF be orthogonalized after increasing rank?}
 
-\item{control}{Algorithm control parameters (see \code{glm.control}).}
+\item{refine}{refine new DMF with another iteration?}
+
+\item{control}{algorithm control parameters (see \code{glm.control}).}
 }
 \value{
 Extended DMF structure.
 }
 \description{
-extend rank from q to an arbitrary rank \verb{\\tilde\{q\}} through offset = eta_q
+Extend rank from q to an arbitrary rank.
 }

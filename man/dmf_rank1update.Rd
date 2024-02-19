@@ -4,18 +4,29 @@
 \alias{dmf_rank1update}
 \title{Increases the rank of a DMF.}
 \usage{
-dmf_rank1update(dx, x, adjust_svd = FALSE, maxit = 100, refine = TRUE, ...)
+dmf_rank1update(
+  x,
+  dx,
+  adjust_svd = FALSE,
+  refine = TRUE,
+  control = glm.control(epsilon = 1e-06, maxit = 100),
+  ...
+)
 }
 \arguments{
-\item{dx}{DMF structure for x of rank q.}
-
 \item{x}{The matrix that was partially decomposed.}
+
+\item{dx}{DMF structure for x of rank q.}
 
 \item{adjust_svd}{Should the DMF be orthogonalized after increasing rank?}
 
-\item{maxit}{Maximum number of iterations for rank-one offset DMF.}
+\item{refine}{refine new DMF with another iteration?}
 
-\item{...}{Other parameters?}
+\item{control}{algorithm control parameters (see \code{glm.control}).}
+
+\item{...}{other parameters passed to dmf calls}
+
+\item{maxit}{Maximum number of iterations for rank-one offset DMF.}
 }
 \value{
 DMF structure for x of rank q + 1.
