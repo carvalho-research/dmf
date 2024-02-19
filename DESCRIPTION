@@ -2,16 +2,16 @@ Package: dmf
 Title: Deviance Matrix Factorization
 Version: 0.1.0
 Authors@R:
-    person(given = "Luis",
-           family = "Carvalho",
-           role = c("aut", "cre"),
-           email = "lecarval@math.bu.edu",
-           comment = c(ORCID = "0000-0003-3413-6910"))
     person(given = "Liang",
            family = "Wang",
            role = c("aut", "cre"),
            email = "leonwang@bu.edu",
            comment = c(ORCID = "0000-0002-2399-463X"))
+    person(given = "Luis",
+           family = "Carvalho",
+           role = c("aut", "cre"),
+           email = "lecarval@math.bu.edu",
+           comment = c(ORCID = "0000-0003-3413-6910"))
 Description: Performs deviance matrix factorizations (DMFs) of matrix data, a generalized version of singular value decompositions for data following exponential family distributions.
 License: MIT + file LICENSE
 Encoding: UTF-8
