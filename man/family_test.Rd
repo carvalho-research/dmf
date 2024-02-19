@@ -2,7 +2,7 @@
 % Please edit documentation in R/dmf.R
 \name{family_test}
 \alias{family_test}
-\title{Perform a generalized Hosmer–Lemeshow test , (L * V' + V * L') / 2.}
+\title{Perform a generalized Hosmer–Lemeshow test.}
 \usage{
 family_test(x, lv, G, weights = 1, offset = zeros(x), dispersion = NULL)
 }
@@ -20,5 +20,5 @@ family_test(x, lv, G, weights = 1, offset = zeros(x), dispersion = NULL)
 \item{dispersion}{If cutomized dispersion is provided}
 }
 \description{
-Perform a generalized Hosmer–Lemeshow test , (L * V' + V * L') / 2.
+Perform a generalized Hosmer–Lemeshow test.
 }

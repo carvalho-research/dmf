@@ -11,7 +11,7 @@ dmf(
   weights = 1,
   offset = zeros(x),
   start = NULL,
-  init_svd = FALSE,
+  init_svd = TRUE,
   control = glm.control(epsilon = 1e-06, maxit = 100)
 )
 }

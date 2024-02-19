@@ -4,46 +4,22 @@
 \alias{dmf_rank1update}
 \title{Increases the rank of a DMF.}
 \usage{
-dmf_rank1update(
-  dx,
-  x,
-  adjust_svd = FALSE,
-  refine = TRUE,
-  control = glm.control(epsilon = 1e-06, maxit = 100),
-  ...
-)
-
-dmf_rank1update(
-  dx,
-  x,
-  adjust_svd = FALSE,
-  refine = TRUE,
-  control = glm.control(epsilon = 1e-06, maxit = 100),
-  ...
-)
+dmf_rank1update(dx, x, adjust_svd = FALSE, maxit = 100, refine = TRUE, ...)
 }
 \arguments{
-\item{dx}{dmf rank q fit result}
+\item{dx}{DMF structure for x of rank q.}
 
-\item{x}{Input matrix to be factorized.}
+\item{x}{The matrix that was partially decomposed.}
 
-\item{adjust_svd}{Todo:fixme.}
-
-\item{refine}{boolen to indicate whether or not to refine rank q + 1 fit \verb{\\Lambda} V^T}
-
-\item{control}{Algorithm control parameters (see \code{glm.control}).}
-
-\item{...}{Other parameters?}
+\item{adjust_svd}{Should the DMF be orthogonalized after increasing rank?}
 
 \item{maxit}{Maximum number of iterations for rank-one offset DMF.}
+
+\item{...}{Other parameters?}
 }
 \value{
 DMF structure for x of rank q + 1.
-
-Extended DMF structure.
 }
 \description{
 Increases the rank of a DMF.
-
-extend rank from q to an arbitrary rank \verb{\\tilde\{q\}} through offset = eta_q
 }

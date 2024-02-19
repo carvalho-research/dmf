@@ -3,8 +3,8 @@
 \name{onatski_rank}
 \alias{onatski_rank}
 \title{Conduct factorization rank selection based upon maximum eigenvalue gap
-Onatski(2010). Algorithm first fit dmf with rank = q_max then conduct eigen
-gap search on the covariance of fitted eta}
+(Onatski, 2010). Algorithm first fit dmf with rank = q_max then conduct eigen
+gap search on the covariance of fitted eta.}
 \usage{
 onatski_rank(
   x,
@@ -33,6 +33,6 @@ onatski_rank(
 }
 \description{
 Conduct factorization rank selection based upon maximum eigenvalue gap
-Onatski(2010). Algorithm first fit dmf with rank = q_max then conduct eigen
-gap search on the covariance of fitted eta
+(Onatski, 2010). Algorithm first fit dmf with rank = q_max then conduct eigen
+gap search on the covariance of fitted eta.
 }
